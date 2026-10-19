@@ -6,7 +6,7 @@
 
 services:
   lingva:
-    image: ${LINGVA_IMAGE:-ghcr.io/mushanyu/lingva-server:latest}
+    image: ${LINGVA_IMAGE:-ghcr.io/mushanyu/lingva-server-pub:latest}
     env_file: .env
     environment:
       MODEL_DIR: /models

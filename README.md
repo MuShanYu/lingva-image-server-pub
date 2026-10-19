@@ -66,7 +66,8 @@ Windows / macOS 可安装 Docker Desktop 后在源码目录手动执行：复制
      并把 `install.sh` 里的 `IMAGE_CN` 设为对应地址；
 3. 打标签发布：`git tag v1.0.0 && git push origin v1.0.0`，GitHub Actions 构建 CPU（`latest`、`v1.0.0`）和
    CUDA（`cuda`、`v1.0.0-cuda`）两个镜像；
-4. 首次发布后，在 GitHub 的 Packages 设置里把 `lingva-server` 包改为 Public，用户才能匿名拉取。
+4. 首次发布后，在 GitHub 的 Packages 设置里把 `lingva-server-pub` 包改为 Public，用户才能匿名拉取；
+   阿里云 ACR 上的 `lingva-server-pub` 仓库同样要设为公开。
 
 本项目包含 GPL-3.0 许可的第三方代码（见 `app/vendor/README.md`），整体以 GPL-3.0 发布，见 `LICENSE`。
 

@@ -26,9 +26,9 @@ set -euo pipefail
 # ---------- 发布地址（发布前改成实际的仓库 / 镜像）----------
 GITHUB_REPO="${LINGVA_GITHUB_REPO:-MuShanYu/lingva-image-server-pub}"
 BRANCH="${LINGVA_BRANCH:-main}"
-IMAGE_GLOBAL="${LINGVA_IMAGE_GLOBAL:-ghcr.io/mushanyu/lingva-server}"
+IMAGE_GLOBAL="${LINGVA_IMAGE_GLOBAL:-ghcr.io/mushanyu/lingva-server-pub}"
 # 国内镜像仓库（阿里云 ACR）；留空则国内也用上面的。同地域的阿里云 ECS 会自动改走 VPC 内网地址（registry-vpc）
-IMAGE_CN="${LINGVA_IMAGE_CN:-crpi-zexpf9vtgz3dg4i1.cn-shanghai.personal.cr.aliyuncs.com/shanghai-mirror/lingva-server}"
+IMAGE_CN="${LINGVA_IMAGE_CN:-crpi-zexpf9vtgz3dg4i1.cn-shanghai.personal.cr.aliyuncs.com/shanghai-mirror/lingva-server-pub}"
 
 ASSUME_YES=0
 for arg in "$@"; do
