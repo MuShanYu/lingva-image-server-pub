@@ -1,0 +1,18 @@
+[Unit]
+Description=Lingva image analysis server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lingva
+Group=lingva
+WorkingDirectory=/opt/lingva-server
+EnvironmentFile=/opt/lingva-server/.env
+# 单 worker：每个 worker 会各自加载一份模型
+ExecStart=/opt/lingva-server/.venv/bin/uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

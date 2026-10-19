@@ -1,0 +1,9 @@
+# Docker 部署用（docker-compose.yml 的 caddy 服务）。站点地址来自 .env 的 LINGVA_SITE（域名），
+# Caddy 会自动申请并续期 Let's Encrypt 证书：域名需要先解析到这台服务器，且 80/443 端口可从公网访问。
+{$LINGVA_SITE} {
+	request_body {
+		max_size 20MB
+	}
+
+	reverse_proxy lingva:8000
+}

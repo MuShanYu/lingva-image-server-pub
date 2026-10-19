@@ -1,0 +1,38 @@
+# 发布版：使用预先构建好的镜像，不需要在本机构建。一行命令安装时由 deploy/install.sh 下载到安装目录并保存为
+# docker-compose.yml；在源码目录中执行 install.sh 时直接使用本文件（.env 里的 COMPOSE_FILE）。配置全部在同目录的 .env 里。
+#   升级：      docker compose pull && docker compose up -d
+#   查看日志：  docker compose logs -f lingva
+#   停止：      docker compose down
+
+services:
+  lingva:
+    image: ${LINGVA_IMAGE:-ghcr.io/mushanyu/lingva-server:latest}
+    env_file: .env
+    environment:
+      MODEL_DIR: /models
+    volumes:
+      - ./models:/models
+    ports:
+      # 启用 Caddy 时只对本机开放（LINGVA_BIND=127.0.0.1），由 Caddy 对外提供 HTTPS
+      - "${LINGVA_BIND:-0.0.0.0}:${LINGVA_PORT:-8000}:8000"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    profiles: ["https"]
+    depends_on:
+      - lingva
+    environment:
+      LINGVA_SITE: ${LINGVA_SITE:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile.docker:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

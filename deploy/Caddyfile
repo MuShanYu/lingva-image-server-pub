@@ -1,0 +1,13 @@
+# 站点地址来自环境变量 LINGVA_SITE（在 /etc/default/caddy 或 systemd override 中设置）：
+#   有域名：LINGVA_SITE=ocr.example.com   → Caddy 自动申请 Let's Encrypt 证书
+#   只有 IP：LINGVA_SITE=203.0.113.10     → 同时取消下面 `tls internal` 的注释，使用 Caddy 自签证书，
+#                                            需要在浏览器中手动信任 Caddy 的根证书，否则扩展请求会失败
+{$LINGVA_SITE} {
+	# tls internal
+
+	request_body {
+		max_size 20MB
+	}
+
+	reverse_proxy 127.0.0.1:8000
+}

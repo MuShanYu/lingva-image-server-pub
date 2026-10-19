@@ -1,0 +1,12 @@
+# 叠加在 docker-compose.yml 之上使用 NVIDIA GPU（需要宿主机已装 NVIDIA 驱动和 nvidia-container-toolkit）。
+# install.sh 选择 GPU 时会在 .env 里写入 COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml；
+# 源码构建时同时写入 TORCH_INDEX_URL=https://download.pytorch.org/whl/cu124，发布模式则使用 CUDA 版镜像。
+services:
+  lingva:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

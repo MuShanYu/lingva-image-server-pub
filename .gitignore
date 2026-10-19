@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+models/
+.idea/
+debug-out/
+# 真实漫画测试页体积较大，不提交（单元测试不依赖它们，只有 scripts/bench.py 使用）
+tests/test_case/

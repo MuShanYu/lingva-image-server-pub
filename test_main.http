@@ -1,0 +1,22 @@
+# 本地调试请求（PyCharm HTTP Client）。token 与 .env 中的 API_TOKEN 一致
+
+GET http://127.0.0.1:8000/v1/health
+Accept: application/json
+
+###
+
+POST http://127.0.0.1:8000/v1/analyze
+Authorization: Bearer dev-token
+Content-Type: multipart/form-data; boundary=lingva
+
+--lingva
+Content-Disposition: form-data; name="file"; filename="page.jpg"
+
+< ./tests/samples/page.jpg
+--lingva
+Content-Disposition: form-data; name="debug"
+
+true
+--lingva--
+
+###
