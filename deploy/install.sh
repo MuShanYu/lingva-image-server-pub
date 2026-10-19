@@ -19,6 +19,7 @@
 #   LINGVA_VERSION=latest           拉取预构建镜像时使用的版本（如 v1.0.0）
 #   LINGVA_BUILD=yes                在源码目录中执行时用本地源码构建镜像（首次 5~15 分钟），默认拉取预构建镜像
 #   GITHUB_PROXY=https://.../       GitHub 下载代理前缀（下载部署文件和文字检测模型用，可选）
+#   LINGVA_ACR_VPC=yes              与 ACR 同地域的阿里云 ECS 改从 VPC 内网地址拉取镜像（默认用公网地址）
 #
 # 重复执行即为升级 / 修改配置：保留 .env 里已有的访问令牌和其他参数，只更新部署相关的几项。
 set -euo pipefail
@@ -27,7 +28,7 @@ set -euo pipefail
 GITHUB_REPO="${LINGVA_GITHUB_REPO:-MuShanYu/lingva-image-server-pub}"
 BRANCH="${LINGVA_BRANCH:-main}"
 IMAGE_GLOBAL="${LINGVA_IMAGE_GLOBAL:-ghcr.io/mushanyu/lingva-server-pub}"
-# 国内镜像仓库（阿里云 ACR）；留空则国内也用上面的。同地域的阿里云 ECS 会自动改走 VPC 内网地址（registry-vpc）
+# 国内镜像仓库（阿里云 ACR）；留空则国内也用上面的。默认用公网地址，LINGVA_ACR_VPC=yes 时同地域 ECS 改走 VPC 内网地址
 IMAGE_CN="${LINGVA_IMAGE_CN:-crpi-zexpf9vtgz3dg4i1.cn-shanghai.personal.cr.aliyuncs.com/shanghai-mirror/lingva-server-pub}"
 
 ASSUME_YES=0
@@ -285,10 +286,11 @@ if [ "$PULL" = no ]; then
 else
     IMAGE_BASE="$IMAGE_GLOBAL"
     { [ "$CN_MIRROR" = yes ] || [ "$ALIYUN_ECS" = yes ]; } && [ -n "$IMAGE_CN" ] && IMAGE_BASE="$IMAGE_CN"
-    # 与 ACR 同地域的 ECS 走 VPC 内网地址拉取：不占公网带宽、不收流量费，CUDA 镜像几分钟就能拉完
+    # 默认用公网地址。LINGVA_ACR_VPC=yes 时，与 ACR 同地域的 ECS 改走 VPC 内网地址：不占公网带宽、不收流量费，
+    # 但私有仓库要用内网地址 docker login。
     #   新版个人版 crpi-<实例>.<地域>.personal.cr.aliyuncs.com → crpi-<实例>-vpc.<地域>.personal.cr.aliyuncs.com
     #   旧版         registry.<地域>.aliyuncs.com                → registry-vpc.<地域>.aliyuncs.com
-    if [ "$ALIYUN_ECS" = yes ]; then
+    if [ "$ALIYUN_ECS" = yes ] && [ "$(yes_no "${LINGVA_ACR_VPC:-no}")" = yes ]; then
         REGISTRY=${IMAGE_BASE%%/*}
         case "$REGISTRY" in
             crpi-*."$ALIYUN_REGION".personal.cr.aliyuncs.com) VPC_REGISTRY="${REGISTRY%%.*}-vpc.${REGISTRY#*.}" ;;

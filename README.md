@@ -41,7 +41,7 @@ Lingva 漫画图片翻译的服务端：接收图片 → 检测文字与气泡 �
 
 - **有域名**：先把域名解析到服务器，并在云服务器安全组放行 80 / 443 端口；脚本会启用 Caddy 自动申请证书。
 - **没有域名**：服务直接通过 `http://服务器IP:8000` 访问（需放行 8000 端口），令牌以明文传输，仅建议临时使用。
-- **国内服务器**：选择使用国内镜像后，镜像从阿里云 ACR 拉取（同地域的阿里云 ECS 自动走 VPC 内网）、
+- **国内服务器**：选择使用国内镜像后，镜像从阿里云 ACR 拉取（同地域的阿里云 ECS 可设 `LINGVA_ACR_VPC=yes` 走 VPC 内网）、
   模型从 hf-mirror.com 下载；拉取 caddy 等 Docker Hub 镜像失败时，需要在 `/etc/docker/daemon.json`
   配置镜像加速器；文字检测模型托管在 GitHub，下载慢时可设置 `GITHUB_PROXY` 指定代理前缀后重新执行。
 - **免交互**：`curl -fsSL <安装脚本地址> | sudo LINGVA_DOMAIN=ocr.example.com LINGVA_CN_MIRROR=yes bash -s -- -y`，

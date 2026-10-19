@@ -5,7 +5,7 @@
 # 里设置 IMAGE_NAME（如私有仓库设为 lingva-server-official），各自构建、推送自己的镜像，互不覆盖。
 # 配置了以下仓库 Secrets 时，同时推送到国内镜像仓库（如阿里云 ACR），供国内服务器拉取：
 #   ALIYUN_REGISTRY（如 registry.cn-shanghai.aliyuncs.com）、ALIYUN_NAMESPACE、ALIYUN_USERNAME、ALIYUN_PASSWORD
-# 同地域的阿里云 ECS 用 install.sh 安装时，会自动改从 VPC 内网地址（registry-vpc.<地域>.aliyuncs.com）拉取
+# install.sh 默认从公网地址拉取；同地域的阿里云 ECS 设 LINGVA_ACR_VPC=yes 时改走 VPC 内网地址
 # 注意：GHCR 的包首次发布后默认是私有的，需要在 GitHub 的 Packages 设置里改为 Public，用户才能匿名拉取。
 name: release
 
