@@ -30,6 +30,8 @@ BRANCH="${LINGVA_BRANCH:-main}"
 IMAGE_GLOBAL="${LINGVA_IMAGE_GLOBAL:-ghcr.io/mushanyu/lingva-server-pub}"
 # 国内镜像仓库（阿里云 ACR）；留空则国内也用上面的。默认用公网地址，LINGVA_ACR_VPC=yes 时同地域 ECS 改走 VPC 内网地址
 IMAGE_CN="${LINGVA_IMAGE_CN:-crpi-zexpf9vtgz3dg4i1.cn-shanghai.personal.cr.aliyuncs.com/shanghai-mirror/lingva-server-pub}"
+# 国内用的 Caddy：release 工作流把 Docker Hub 的 caddy:2 同步到 IMAGE_CN 所在的命名空间
+CADDY_CN="${LINGVA_CADDY_IMAGE_CN:-${IMAGE_CN%/*}/caddy:2}"
 
 ASSUME_YES=0
 for arg in "$@"; do
@@ -71,6 +73,22 @@ yes_no() {
         y | yes | 1 | true) echo yes ;;
         *) echo no ;;
     esac
+}
+
+# acr_vpc 镜像地址：默认原样返回（公网地址）。LINGVA_ACR_VPC=yes 时，与 ACR 同地域的阿里云 ECS 改走 VPC 内网地址：
+# 不占公网带宽、不收流量费，但私有仓库要用内网地址 docker login。
+#   新版个人版 crpi-<实例>.<地域>.personal.cr.aliyuncs.com → crpi-<实例>-vpc.<地域>.personal.cr.aliyuncs.com
+#   旧版         registry.<地域>.aliyuncs.com                → registry-vpc.<地域>.aliyuncs.com
+acr_vpc() {
+    local image=$1 registry vpc=""
+    if [ "${ALIYUN_ECS:-no}" = yes ] && [ "$(yes_no "${LINGVA_ACR_VPC:-no}")" = yes ]; then
+        registry=${image%%/*}
+        case "$registry" in
+            crpi-*."$ALIYUN_REGION".personal.cr.aliyuncs.com) vpc="${registry%%.*}-vpc.${registry#*.}" ;;
+            registry."$ALIYUN_REGION".aliyuncs.com) vpc="registry-vpc.${registry#registry.}" ;;
+        esac
+    fi
+    if [ -n "$vpc" ]; then echo "$vpc/${image#*/}"; else echo "$image"; fi
 }
 
 [ "$(uname -s)" = "Linux" ] || die "一键部署脚本只支持 Linux。Windows / macOS 请安装 Docker Desktop 后按 README 手动执行 docker compose。"
@@ -166,8 +184,9 @@ if ! docker info >/dev/null 2>&1; then
 fi
 $DOCKER compose version >/dev/null 2>&1 || die "需要 Docker Compose v2（docker compose 命令），请升级 Docker"
 
-if [ "$CN_MIRROR" = yes ] && ! $DOCKER info 2>/dev/null | grep -qi "registry mirrors"; then
-    warn "Docker 尚未配置镜像加速器，国内服务器从 Docker Hub 拉取 caddy 等镜像可能失败。"
+# 国内拉取的镜像（服务和 Caddy）都在 ACR 上；只有本机构建时要从 Docker Hub 拉 python 基础镜像
+if [ "$CN_MIRROR" = yes ] && [ "$PULL" = no ] && ! $DOCKER info 2>/dev/null | grep -qi "registry mirrors"; then
+    warn "Docker 尚未配置镜像加速器，本机构建需要从 Docker Hub 拉取 python 基础镜像，国内服务器可能失败。"
     warn "如卡在拉取镜像，请在 /etc/docker/daemon.json 配置 registry-mirrors 后重启 Docker 再重新执行本脚本。"
 fi
 
@@ -285,22 +304,9 @@ if [ "$PULL" = no ]; then
     fi
 else
     IMAGE_BASE="$IMAGE_GLOBAL"
-    { [ "$CN_MIRROR" = yes ] || [ "$ALIYUN_ECS" = yes ]; } && [ -n "$IMAGE_CN" ] && IMAGE_BASE="$IMAGE_CN"
-    # 默认用公网地址。LINGVA_ACR_VPC=yes 时，与 ACR 同地域的 ECS 改走 VPC 内网地址：不占公网带宽、不收流量费，
-    # 但私有仓库要用内网地址 docker login。
-    #   新版个人版 crpi-<实例>.<地域>.personal.cr.aliyuncs.com → crpi-<实例>-vpc.<地域>.personal.cr.aliyuncs.com
-    #   旧版         registry.<地域>.aliyuncs.com                → registry-vpc.<地域>.aliyuncs.com
-    if [ "$ALIYUN_ECS" = yes ] && [ "$(yes_no "${LINGVA_ACR_VPC:-no}")" = yes ]; then
-        REGISTRY=${IMAGE_BASE%%/*}
-        case "$REGISTRY" in
-            crpi-*."$ALIYUN_REGION".personal.cr.aliyuncs.com) VPC_REGISTRY="${REGISTRY%%.*}-vpc.${REGISTRY#*.}" ;;
-            registry."$ALIYUN_REGION".aliyuncs.com) VPC_REGISTRY="registry-vpc.${REGISTRY#registry.}" ;;
-            *) VPC_REGISTRY="" ;;
-        esac
-        if [ -n "$VPC_REGISTRY" ]; then
-            IMAGE_BASE="$VPC_REGISTRY/${IMAGE_BASE#*/}"
-            info "同地域阿里云 ECS：从 VPC 内网地址 $VPC_REGISTRY 拉取镜像"
-        fi
+    if { [ "$CN_MIRROR" = yes ] || [ "$ALIYUN_ECS" = yes ]; } && [ -n "$IMAGE_CN" ]; then
+        IMAGE_BASE=$(acr_vpc "$IMAGE_CN")
+        [ "$IMAGE_BASE" = "$IMAGE_CN" ] || info "同地域阿里云 ECS：从 VPC 内网地址 ${IMAGE_BASE%%/*} 拉取镜像"
     fi
     VERSION="${LINGVA_VERSION:-latest}"
     if [ "$GPU_CHOICE" = yes ]; then
@@ -309,6 +315,12 @@ else
         TAG="$VERSION"
     fi
     set_kv LINGVA_IMAGE "$IMAGE_BASE:$TAG"
+fi
+# Caddy（有域名时启用）：国内从 ACR 拉取同步过去的版本，其他情况用 Docker Hub 的 caddy:2
+if { [ "$CN_MIRROR" = yes ] || [ "$ALIYUN_ECS" = yes ]; } && [ -n "$CADDY_CN" ] && [ -n "$IMAGE_CN" ]; then
+    set_kv CADDY_IMAGE "$(acr_vpc "$CADDY_CN")"
+else
+    set_kv CADDY_IMAGE ""
 fi
 [ "$CN_MIRROR" = yes ] && set_kv HF_ENDPOINT "https://hf-mirror.com"
 [ -n "${GITHUB_PROXY:-}" ] && set_kv GITHUB_PROXY "$GITHUB_PROXY"

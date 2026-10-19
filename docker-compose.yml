@@ -27,7 +27,8 @@ services:
     restart: unless-stopped
 
   caddy:
-    image: caddy:2
+    # 国内模式下 install.sh 把 CADDY_IMAGE 设为 ACR 上的同步版本（Docker Hub 在国内基本拉不下来）
+    image: ${CADDY_IMAGE:-caddy:2}
     profiles: ["https"]
     depends_on:
       - lingva

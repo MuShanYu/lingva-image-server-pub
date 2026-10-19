@@ -7,6 +7,8 @@
 #   ALIYUN_REGISTRY（如 registry.cn-shanghai.aliyuncs.com）、ALIYUN_NAMESPACE、ALIYUN_USERNAME、ALIYUN_PASSWORD
 # install.sh 默认从公网地址拉取；同地域的阿里云 ECS 设 LINGVA_ACR_VPC=yes 时改走 VPC 内网地址
 # 注意：GHCR 的包首次发布后默认是私有的，需要在 GitHub 的 Packages 设置里改为 Public，用户才能匿名拉取。
+# 配置了 ACR 时还会把 Docker Hub 的 caddy:2 同步到 <ACR>/<命名空间>/caddy:2（国内拉不到 Docker Hub），
+# ACR 上的 caddy 仓库需设为公开。
 name: release
 
 on:
@@ -15,6 +17,31 @@ on:
   workflow_dispatch:
 
 jobs:
+  # 国内服务器拉不到 Docker Hub：把有域名时用的 caddy:2 同步到 ACR，install.sh 国内模式改从这里拉取。
+  # 只复制 amd64 / arm64 两个平台的镜像，不带官方镜像里的签名证明清单（ACR 个人版不接受）
+  caddy:
+    runs-on: ubuntu-latest
+    env:
+      ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
+      ALIYUN_NAMESPACE: ${{ secrets.ALIYUN_NAMESPACE }}
+    steps:
+      - uses: docker/setup-buildx-action@v3
+        if: env.ALIYUN_REGISTRY != ''
+
+      - uses: docker/login-action@v3
+        if: env.ALIYUN_REGISTRY != ''
+        with:
+          registry: ${{ secrets.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD }}
+
+      - name: Mirror caddy:2 to ACR
+        if: env.ALIYUN_REGISTRY != ''
+        run: |
+          docker buildx imagetools create --platform linux/amd64,linux/arm64 \
+            --tag "$ALIYUN_REGISTRY/$ALIYUN_NAMESPACE/caddy:2" docker.io/library/caddy:2
+          docker buildx imagetools inspect "$ALIYUN_REGISTRY/$ALIYUN_NAMESPACE/caddy:2"
+
   image:
     runs-on: ubuntu-latest
     permissions:
