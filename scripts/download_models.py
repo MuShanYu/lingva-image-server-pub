@@ -4,9 +4,8 @@
 
 sha256 为 None 的文件（小的 json/txt）只打印实际 hash，确认后再固定到下面的表里；已存在时直接跳过。
 已存在且 hash 一致的文件不会重复下载，可以反复运行（Docker 容器每次启动都会运行一遍）。
-镜像：环境变量 HF_ENDPOINT（如 https://hf-mirror.com）、GITHUB_PROXY（GitHub 下载地址前缀代理）。
-大文件的 hash 来源：GitHub Release 取自 manga-image-translator 源码中的 _MODEL_MAPPING，
-Hugging Face 取自 /api/models/<repo>?blobs=true 返回的 LFS sha256；HF 文件按固定 commit 下载。
+全部模型都从 Hugging Face 按固定 commit 下载；国内设环境变量 HF_ENDPOINT=https://hf-mirror.com 走镜像。
+大文件的 hash 取自 /api/models/<repo>?blobs=true 返回的 LFS sha256。
 """
 
 import argparse
@@ -24,8 +23,10 @@ RETRIES = 5
 RETRY_DELAY = 5
 PROGRESS_INTERVAL = 5  # 秒：非终端输出时打印进度的间隔
 
-MIT_RELEASE ="https://github.com/zyddnys/manga-image-translator/releases/download/beta-0.3"
-
+# 文字检测模型原本只发布在 manga-image-translator 的 GitHub Release（beta-0.3）上，国内下载困难；
+# 原样转存到 Hugging Face（GPL-3.0），文件与 hash 不变
+LINGVA_MODELS_REPO = "MuShanYu/lingva-models"
+LINGVA_MODELS_REV = "26f94967553545da86d1d13ff9370c36dbaaea08"
 BUBBLE_REPO = "ogkalu/comic-text-and-bubble-detector"
 BUBBLE_REV = "16e8a622f91fabc6b5b65c96d32d1183f8843546"
 OCR_REPO = "kha-white/manga-ocr-base"
@@ -47,11 +48,8 @@ def hf(repo: str, rev: str, name: str, local_dir: str, sha256: str | None = None
 
 GROUPS: dict[str, list[ModelFile]] = {
     "detect": [
-        ModelFile(
-            "detection/comictextdetector.pt",
-            f"{MIT_RELEASE}/comictextdetector.pt",
-            "1f90fa60aeeb1eb82e2ac1167a66bf139a8a61b8780acd351ead55268540cccb",
-        ),
+        hf(LINGVA_MODELS_REPO, LINGVA_MODELS_REV, "comictextdetector.pt", "detection",
+           "1f90fa60aeeb1eb82e2ac1167a66bf139a8a61b8780acd351ead55268540cccb"),
         hf(BUBBLE_REPO, BUBBLE_REV, "detector.onnx", "bubble",
            "065744e91c0594ad8663aa8b870ce3fb27222942eded5a3cc388ce23421bd195"),
         hf(BUBBLE_REPO, BUBBLE_REV, "config.json", "bubble"),
@@ -163,14 +161,10 @@ def download(url: str, dest: Path) -> None:
 
 
 def resolve_url(url: str) -> str:
-    """按环境变量换成镜像地址：HF_ENDPOINT（如 https://hf-mirror.com）替换 Hugging Face 域名，
-    GITHUB_PROXY（形如 https://example.com/ 的前缀）加在 GitHub 下载地址前。"""
+    """按环境变量 HF_ENDPOINT（如 https://hf-mirror.com）把 Hugging Face 域名换成镜像。"""
     hf_endpoint = os.environ.get("HF_ENDPOINT", "").strip().rstrip("/")
     if hf_endpoint and url.startswith("https://huggingface.co/"):
         return hf_endpoint + url[len("https://huggingface.co") :]
-    github_proxy = os.environ.get("GITHUB_PROXY", "").strip()
-    if github_proxy and url.startswith("https://github.com/"):
-        return github_proxy.rstrip("/") + "/" + url
     return url
 
 

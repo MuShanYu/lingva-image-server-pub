@@ -18,7 +18,7 @@
 #   LINGVA_DIR=/opt/lingva-server   一行命令安装时的安装目录
 #   LINGVA_VERSION=latest           拉取预构建镜像时使用的版本（如 v1.0.0）
 #   LINGVA_BUILD=yes                在源码目录中执行时用本地源码构建镜像（首次 5~15 分钟），默认拉取预构建镜像
-#   GITHUB_PROXY=https://.../       GitHub 下载代理前缀（下载部署文件和文字检测模型用，可选）
+#   GITHUB_PROXY=https://.../       GitHub 下载代理前缀（一行命令安装时下载部署文件用，可选）
 #   LINGVA_ACR_VPC=yes              与 ACR 同地域的阿里云 ECS 改从 VPC 内网地址拉取镜像（默认用公网地址）
 #
 # 重复执行即为升级 / 修改配置：保留 .env 里已有的访问令牌和其他参数，只更新部署相关的几项。
@@ -323,7 +323,6 @@ else
     set_kv CADDY_IMAGE ""
 fi
 [ "$CN_MIRROR" = yes ] && set_kv HF_ENDPOINT "https://hf-mirror.com"
-[ -n "${GITHUB_PROXY:-}" ] && set_kv GITHUB_PROXY "$GITHUB_PROXY"
 chmod 600 .env
 mkdir -p models
 
