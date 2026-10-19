@@ -1,6 +1,8 @@
 # 推送版本标签（如 v1.0.0）时构建并发布镜像：
-#   ghcr.io/<owner>/lingva-server:{latest, v1.0.0}          CPU 版
-#   ghcr.io/<owner>/lingva-server:{cuda, v1.0.0-cuda}       CUDA 版（NVIDIA GPU）
+#   ghcr.io/<owner>/<镜像名>:{latest, v1.0.0}          CPU 版
+#   ghcr.io/<owner>/<镜像名>:{cuda, v1.0.0-cuda}       CUDA 版（NVIDIA GPU）
+# 镜像名默认 lingva-server（公开分发的镜像，install.sh 默认拉取它）；其他仓库在 Settings → Variables
+# 里设置 IMAGE_NAME（如私有仓库设为 lingva-server-official），各自构建、推送自己的镜像，互不覆盖。
 # 配置了以下仓库 Secrets 时，同时推送到国内镜像仓库（如阿里云 ACR），供国内服务器拉取：
 #   ALIYUN_REGISTRY（如 registry.cn-shanghai.aliyuncs.com）、ALIYUN_NAMESPACE、ALIYUN_USERNAME、ALIYUN_PASSWORD
 # 同地域的阿里云 ECS 用 install.sh 安装时，会自动改从 VPC 内网地址（registry-vpc.<地域>.aliyuncs.com）拉取
@@ -32,6 +34,7 @@ jobs:
     env:
       ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
       ALIYUN_NAMESPACE: ${{ secrets.ALIYUN_NAMESPACE }}
+      IMAGE_NAME: ${{ vars.IMAGE_NAME || 'lingva-server' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -58,9 +61,9 @@ jobs:
         id: tags
         run: |
           owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          images="ghcr.io/$owner/lingva-server"
+          images="ghcr.io/$owner/$IMAGE_NAME"
           if [ -n "$ALIYUN_REGISTRY" ]; then
-            images="$images $ALIYUN_REGISTRY/$ALIYUN_NAMESPACE/lingva-server"
+            images="$images $ALIYUN_REGISTRY/$ALIYUN_NAMESPACE/$IMAGE_NAME"
           fi
           tags=""
           for img in $images; do
