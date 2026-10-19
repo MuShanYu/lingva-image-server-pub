@@ -4,6 +4,13 @@
 #   停止：      docker compose down
 # .env 里的 COMPOSE_PROFILES=https 会同时启动 Caddy（自动 HTTPS），COMPOSE_FILE 可叠加 GPU 配置。
 
+# 容器日志轮转：docker 默认的 json-file 日志不限大小、永久保留；每个容器最多保留 3 个 10 MB 的文件
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   lingva:
     build:
@@ -25,6 +32,7 @@ services:
       # 启用 Caddy 时只对本机开放（LINGVA_BIND=127.0.0.1），由 Caddy 对外提供 HTTPS
       - "${LINGVA_BIND:-0.0.0.0}:${LINGVA_PORT:-8000}:8000"
     restart: unless-stopped
+    logging: *logging
 
   caddy:
     # 国内模式下 install.sh 把 CADDY_IMAGE 设为 ACR 上的同步版本（Docker Hub 在国内基本拉不下来）
@@ -42,6 +50,7 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     restart: unless-stopped
+    logging: *logging
 
 volumes:
   caddy_data:

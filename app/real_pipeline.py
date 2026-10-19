@@ -126,9 +126,10 @@ class RealPipeline:
         with timer.stage("ocr"):
             ocr_results = _recognize(self._ocr, pil_img, det.mask, grouped)
         kept = [(g, r) for g, r in zip(grouped, ocr_results) if not is_noise(r.text, r.confidence)]
-        dropped = [r.text for g, r in zip(grouped, ocr_results) if is_noise(r.text, r.confidence)]
+        dropped = len(grouped) - len(kept)
         if dropped:
-            logger.info("过滤 %d 个块：%s", len(dropped), dropped)
+            # 只记数量：识别出的文字是用户在看的内容，不写进日志
+            logger.info("过滤 %d 个噪声块", dropped)
         kept_blocks = [g for g, _ in kept]
 
         need_mask = inpaint or debug

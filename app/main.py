@@ -120,7 +120,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except DecodeError as e:
                 raise ApiError(400, Code.INVALID_IMAGE, str(e)) from e
             except Exception as e:
-                logger.exception("推理失败：%s", file.filename)
+                # 不记文件名（客户端提供，可能含用户信息）
+                logger.exception("推理失败（%d 字节）", len(data))
                 raise ApiError(500, Code.INFERENCE_FAILED, "Inference failed") from e
 
         logger.info(
