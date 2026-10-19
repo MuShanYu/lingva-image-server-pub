@@ -28,7 +28,25 @@ Lingva 漫画图片翻译的服务端：接收图片 → 检测文字与气泡 �
    curl -fsSL https://raw.githubusercontent.com/MuShanYu/lingva-image-server-pub/main/deploy/install.sh | sudo bash
    ```
 
-   国内服务器访问 GitHub 不稳定时，可以在 `git clone` 或 `curl` 的地址前加 GitHub 代理前缀。
+   **国内服务器**直连 GitHub 经常失败，可以通过 GitHub 加速代理安装。一行命令安装（推荐）：
+
+   ```bash
+   curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/MuShanYu/lingva-image-server-pub/main/deploy/install.sh      | sudo GITHUB_PROXY=https://gh-proxy.com/ LINGVA_CN_MIRROR=yes bash
+   ```
+
+   或者通过代理拉取代码后安装：
+
+   ```bash
+   git clone https://gh-proxy.com/https://github.com/MuShanYu/lingva-image-server-pub.git
+   cd lingva-image-server-pub
+   sudo LINGVA_CN_MIRROR=yes bash deploy/install.sh
+   ```
+
+   - `GITHUB_PROXY`：一行命令安装时，脚本还要从 GitHub 下载几个部署文件，也通过这个代理下载。
+   - `LINGVA_CN_MIRROR=yes`：直接使用国内镜像（阿里云 ACR、hf-mirror 等），不再询问。
+   - 只有获取代码和部署文件需要代理，镜像和模型都从国内源下载。`gh-proxy.com` 不可用时，可以把命令里的
+     两处地址都换成 `https://ghfast.top/` 等其他代理。
+   - 代理是第三方服务。介意的话，可以先下载脚本看一眼再执行，也可以在本机下载代码后上传到服务器。
 
    脚本会依次询问：是否使用国内镜像、域名（可留空）、是否使用 GPU（检测到时才问），然后自动：
    安装 Docker（如未安装）→ 生成访问令牌和 `.env` → 拉取预构建镜像（不在本机构建）→ 启动服务 →
