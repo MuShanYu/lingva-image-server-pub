@@ -126,6 +126,24 @@ def test_flat_fill_color_detects_uniform_background() -> None:
     assert flat_fill_color(noisy, m) is None
 
 
+def test_flat_fill_color_on_dark_background() -> None:
+    # 深色横幅上的白字：外圈整圈都是深色，不能当成「线稿伸进 mask」而交给 LaMa（大块纯色上会出网格状伪影）
+    crop = np.full((60, 60, 3), (30, 50, 80), dtype=np.uint8)
+    m = np.zeros((60, 60), dtype=bool)
+    m[20:40, 10:50] = True
+    crop[25:35, 15:45] = 255
+    assert tuple(flat_fill_color(crop, m)) == (30, 50, 80)
+
+
+def test_flat_fill_color_leaves_line_entering_mask_to_lama() -> None:
+    # 浅色背景上的框线一直延伸进 mask：纯色填充会把这段线涂掉
+    crop = white_page(60, 60)
+    m = np.zeros((60, 60), dtype=bool)
+    m[20:40, 20:40] = True
+    crop[29:31, :] = 0
+    assert flat_fill_color(crop, m) is None
+
+
 def test_fill_flat_regions_fills_only_uniform_components() -> None:
     img = white_page()
     img[:, 100:] = np.random.default_rng(1).integers(0, 255, (200, 100, 3), dtype=np.uint8)

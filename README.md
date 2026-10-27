@@ -11,8 +11,17 @@ Lingva 漫画图片翻译的服务端：接收图片 → 检测文字与气泡 �
 适合把服务部署到自己的 Linux 服务器（Ubuntu / Debian / CentOS 等）。服务以 Docker 容器运行，
 有域名时自动启用 HTTPS。
 
-**服务器建议**：4 核以上 CPU、8 GB 内存、15 GB 磁盘（镜像约 3 GB + 模型约 0.9 GB）。
-纯 CPU 下普通漫画页每张约 4~8 秒，文字很密的页面 15~20 秒；有 NVIDIA GPU 时会快很多。
+**服务器配置**（漫画 + 文档识别都启用；实测数据见 `notes/doc-ocr-probe.md` 第 12 节）：
+
+| | CPU | 内存 | 显卡 | 速度（单个请求） |
+| --- | --- | --- | --- | --- |
+| GPU 最低 | 2 核 | 8 GB | NVIDIA 8 GB 显存，驱动支持 CUDA 12 | 漫画约 0.9 秒/张，文档约 0.6 秒/页 |
+| GPU 推荐 | 4~8 核 | 16 GB | 16~24 GB 显存（如 A10、L4） | 同上；`MAX_CONCURRENCY=2` 时每分钟约 130 个请求 |
+| 纯 CPU 最低 | 8 核 | 8 GB | 无 | 漫画约 6 秒/张，文档约 4~5 秒/页，只适合个人使用 |
+| 纯 CPU 推荐 | 16 核 | 16 GB | 无 | 漫画约 4 秒/张，文档约 3 秒/页 |
+
+磁盘至少 20 GB（CUDA 版镜像解压后约 11 GB，模型约 1.2 GB）。只开漫画、不开文档识别时，内存 6 GB、显存 4 GB 即可。
+显存只有 6 GB 时把 `DOC_DET_LIMIT_SIDE` 降到 2000、`MAX_CONCURRENCY` 设为 1（准确率基本不变）。
 
 1. 在服务器上拉取代码并执行安装脚本：
 
@@ -165,13 +174,36 @@ python scripts/bench.py tests/test_case --out debug-out
 
 ## 接口
 
-- `GET /v1/health`：无需鉴权，返回 `api_version`、`stub`、`device`、`model_version`、`capabilities`。
+- `GET /v1/health`：无需鉴权，返回 `api_version`、`stub`、`device`、`model_version`、`capabilities`、
+  `doc_pipeline`（`{enabled, models: {layout, det, orientation, rec: [...]}}`，客户端据此判断是否支持文档识别）。
 - `POST /v1/analyze`：`Authorization: Bearer <token>`，`multipart/form-data`：
   - `file`：jpg / png / webp
   - `inpaint`：默认 `true`；`false` 时 `clean_image` 为 `null`
   - `debug`：默认 `false`；`true` 时返回 `debug_mask`（base64 PNG）
 
 所有坐标均为 EXIF 转正后的原图像素坐标 `[x1, y1, x2, y2]`（x2、y2 不含）。
+
+### 文档识别（PDF 阅读器）
+
+服务端只做识别，翻译仍由插件调用用户自己的翻译引擎完成。鉴权、排队、错误格式与 `/v1/analyze` 相同。
+需要服务器启用文档管线（见下文「文档识别管线」），未启用时返回 `doc_pipeline_disabled`。
+插件接入说明（字段含义、调用示例、真实响应、错误处理）见 `lingva-doc-api.md`。
+
+- `POST /v1/doc/page`：扫描页整页识别，`multipart/form-data`：
+  - `file`：jpg / png / webp，建议按约 200 DPI 渲染、长边不超过 `DOC_MAX_SIDE`（默认 2500）
+  - `lang_hint`：可选，`auto`（默认）、`zh`、`en`、`ja`、`ko`、`ru`、`th`、拉丁字母语言代码……决定识别模型：
+    韩文、西里尔字母、泰文用各自的语种模型，其余用 PP-OCRv6。**插件应尽快带上明确的语种**：
+    PP-OCRv6 识别韩文、俄文时结果完全错误，置信度却很高，服务端无法发现
+  - 响应：`rotation`（服务端检测到的方向，坐标已还原到原图）、`lang`、`rec_model`、`confidence`、
+    `blocks[]`（`type` 为 heading / paragraph / list / table / figure / formula / skip，按阅读顺序排列，
+    含拼好的 `text`、`lines`、表格的粗略网格 `table`）。页眉、页脚、页码标为 `skip`，默认不翻译
+  - `erase`：可选，默认 `false`；`true` 时另返回 `erased_image`：擦掉所有文字行后的整页图（WebP，尺寸和方向同上传的图），
+    插件把要翻译的块的行从这张图上裁下来贴回页面。不额外计额度
+- `POST /v1/doc/figure`：单张图片识别，字段同上，另加 `erase`（默认 `false`，`true` 时返回擦字后的
+  `erased_image`，格式同 `clean_image`）。响应 `has_text`、`text_ratio`、`regions[]`
+
+文档接口的坐标是相对原图的归一化坐标 `[0, 1]`，完整字段见 `app/schemas.py` 的 `DocPageResponse`、
+`DocFigureResponse`。
 
 ### 错误
 
@@ -189,10 +221,36 @@ python scripts/bench.py tests/test_case --out debug-out
 | `internal_error` | 500 | | 未预期的服务端异常 |
 | `unauthorized` | 401 | | token 无效或缺失 |
 | `invalid_image` | 400 | | 图片无法解码或格式不支持（仅 jpg / png / webp） |
-| `image_too_large` | 413 | `max_mb` | 图片超过大小上限 |
+| `image_too_large` | 413 | `max_mb`；文档接口长边超限时另有 `max_side` | 图片超过大小上限，压缩后重试 |
 | `inference_failed` | 500 | | 识别失败（服务端日志记录完整堆栈） |
+| `timeout` | 504 | | 文档接口单页处理超时（`DOC_TIMEOUT`） |
+| `doc_pipeline_disabled` | 503 | | 服务器没有启用文档识别，隐藏相关入口 |
 
 完整定义见 `app/errors.py`。
+
+## 文档识别管线
+
+识别用 PaddleOCR 3.x（PP-DocLayoutV3 版面分析、PP-OCRv6 检测与识别，onnxruntime 引擎），实测与设计取舍见
+`notes/doc-ocr-probe.md`。PaddleOCR 与漫画管线装在同一个环境里（numpy、opencv 版本已按 paddlex 的要求对齐，
+见 `requirements.txt`），以子进程运行（`app/doc/worker.py`）：文档模型加载失败或出错不影响漫画服务。
+
+- **Docker**：构建参数 `DOC_PIPELINE=1`（发布的 `:cuda` 镜像已带）会安装 `requirements-doc.txt`；`.env` 里设
+  `DOC_PIPELINE_ENABLED=1`。容器启动时自动把文档模型（约 300 MB）下载到 `models/paddlex/`；国内服务器访问不了
+  HuggingFace 时设 `PADDLE_PDX_MODEL_SOURCE=BOS`。前端 + GPU 机分开部署时，两边都要设 `DOC_PIPELINE_ENABLED=1`。
+- **手动安装**：
+
+  ```bash
+  pip install -r requirements.txt -r requirements-doc.txt   # 一起装，保证版本一致；opencv 需要系统库 libgl1
+  python scripts/download_doc_models.py
+  # .env：DOC_PIPELINE_ENABLED=1
+  ```
+
+- **显存 / 内存**（A10 实测）：两条管线都启用时空闲占显存 1.7G、内存 1.3G（只开漫画为 1.1G / 0.7G）；
+  文档单页推理显存峰值 3.6G（`DOC_DET_LIMIT_SIDE=2000` 时 3.1G），每次推理后归还；漫画、文档混合并发时整卡峰值约 5.3G、
+  内存峰值约 4.4G（容器限 4G 会 OOM，6G 正常；纯 CPU 推理内存峰值约 7G）。单页耗时 P50 约 0.65 秒、P95 约 1.4 秒。
+- **排队**：文档请求先进单独的队列（worker 一次处理一个），再占用与漫画共用的推理名额（`MAX_CONCURRENCY`）。
+- **评估**：`scripts/doc_ocr_eval.py` 在测试集上输出可视化图、每页文字、耗时和 CER（测试集不提交，manifest 模板见
+  `tests/doc_ocr/manifest.example.csv`）。
 
 ## 手动部署（不用 Docker，systemd）
 

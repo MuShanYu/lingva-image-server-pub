@@ -1,0 +1,24 @@
+file,lang,category,reference,pages
+# 测试集 v5（tests/samples/pdf/，不提交）：14 个 PDF、100 页，另有 doc_figure/ 3 张图。
+# 可信 CER 用测试集自带的按页参考文字（--page-refs tests/samples/pdf/test_manifest.csv，scorable_cer=yes 的 25 页）；
+# reference=text_layer 的页另算文本层 CER，只作参考。扫描件其余页没有参考文字
+# 部分页内容重复（03、04 的 1–4 与 7–10 页等），页数不等于独立样本数
+01_academic_paper_selectable_12p.pdf,en,paper,text_layer,
+02_book_scans_image_only_12p.pdf,en,scan,,
+03_japanese_selectable_10p.pdf,ja,japanese,text_layer,
+# 04 的 3、6、9 页是横排标题 + 字形侧转的正文，文本层顺序是乱的，以按页参考文字为准
+04_chinese_archival_selectable_10p.pdf,zh,chinese,text_layer,
+05_degraded_photocopies_image_only_10p.pdf,zh,photocopy,,
+06_korean_selectable_6p.pdf,ko,korean,text_layer,
+07_russian_selectable_6p.pdf,ru,russian,text_layer,
+# 08 每页同时有中、日、韩文：lang_hint 只能选一种，auto 走 PP-OCRv6，韩文行识别不出属于预期
+08_mixed_layout_selectable_8p.pdf,auto,mixed,text_layer,
+09_true_two_column_4p.pdf,en,two_column,text_layer,
+10_facing_page_book_scans_4p.pdf,en,facing_pages,,
+11_japanese_vertical_4p.pdf,ja,vertical,text_layer,
+12_original_upside_down_scans_4p.pdf,en,upside_down,,
+13_thai_selectable_embedded_4p.pdf,th,thai,text_layer,
+# 14：1、2 页横置 90° / 270° 扫描，3、4 页图表（看无序 CER），5、6 页竖排中文
+14_additional_regression_6p.pdf,en,sideways,,1-2
+14_additional_regression_6p.pdf,en,chart,,3-4
+14_additional_regression_6p.pdf,zh,vertical_zh,,5-6

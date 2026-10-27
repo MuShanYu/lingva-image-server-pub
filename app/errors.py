@@ -20,8 +20,10 @@ class Code(StrEnum):
 
     # 识别
     INVALID_IMAGE = "invalid_image"  # 400 图片无法解码或格式不支持
-    IMAGE_TOO_LARGE = "image_too_large"  # 413 附 max_mb
+    IMAGE_TOO_LARGE = "image_too_large"  # 413 附 max_mb；文档接口按长边超限时还附 max_side（像素）
     INFERENCE_FAILED = "inference_failed"  # 500
+    TIMEOUT = "timeout"  # 504 处理超时（文档接口，单页超过 DOC_TIMEOUT）
+    DOC_PIPELINE_DISABLED = "doc_pipeline_disabled"  # 503 服务器没有启用文档识别
 
 
 class ApiError(Exception):

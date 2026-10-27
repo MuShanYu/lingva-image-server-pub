@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 import onnxruntime as ort
 
+from ..cpus import available_cpus
 from ..schemas import BBox
 
 INPUT_SIZE = 640
@@ -62,6 +63,7 @@ class BubbleDetector:
         opts = ort.SessionOptions()
         # 否则 onnxruntime 会清除线程的 denormal flush 标志，拖慢后续的 torch 推理（见 device.flush_denormal）
         opts.add_session_config_entry("session.set_denormal_as_zero", "1")
+        opts.intra_op_num_threads = available_cpus()
         self._session = ort.InferenceSession(str(model_path), sess_options=opts, providers=providers)
         self.provider = self._session.get_providers()[0]
         self._score_min = score_min

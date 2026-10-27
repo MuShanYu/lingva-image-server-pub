@@ -54,10 +54,13 @@ jobs:
           - variant: cpu
             torch_index: https://download.pytorch.org/whl/cpu
             onnxruntime_gpu: 0
+            doc_pipeline: 0
           - variant: cuda
             torch_index: https://download.pytorch.org/whl/cu124
             # 气泡检测也走 CUDA（onnxruntime-gpu）
             onnxruntime_gpu: 1
+            # CUDA 版附带文档识别管线（requirements-doc.txt，DOC_PIPELINE_ENABLED=1 时启用）
+            doc_pipeline: 1
     env:
       ALIYUN_REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
       ALIYUN_NAMESPACE: ${{ secrets.ALIYUN_NAMESPACE }}
@@ -111,6 +114,7 @@ jobs:
           build-args: |
             TORCH_INDEX_URL=${{ matrix.torch_index }}
             ONNXRUNTIME_GPU=${{ matrix.onnxruntime_gpu }}
+            DOC_PIPELINE=${{ matrix.doc_pipeline }}
           tags: ${{ steps.tags.outputs.tags }}
           # 不附带 provenance / SBOM 证明：它们以 OCI 空清单的形式推送，阿里云 ACR 个人版会拒绝
           # （denied: unknown manifest class for application/vnd.oci.empty.v1+json）

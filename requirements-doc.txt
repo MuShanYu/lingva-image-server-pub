@@ -1,0 +1,10 @@
+# 文档识别管线（可选）：PaddleOCR 3.x，推理走 onnxruntime 引擎，不装 paddlepaddle。
+# 与 requirements.txt 装在同一个环境里（pip install -r requirements.txt -r requirements-doc.txt），
+# 两者的 numpy、opencv 版本已对齐（见 requirements.txt）。文档 worker 仍以子进程运行（app/doc/worker.py）。
+# 版本锁定：显存池收缩依赖 paddlex 的 ONNXRuntimeRunner 内部接口（app/doc/engine.py）。
+# 不用 paddleocr[all]：只用到版面、方向分类、检测、识别这几个模块，[all] 会多装约 370 MB（langchain 等）
+paddleocr==3.7.0
+paddlex==3.7.2
+# 探针 / 评估脚本：渲染 PDF、采样显存
+pypdfium2>=4.30
+nvidia-ml-py>=12.0
