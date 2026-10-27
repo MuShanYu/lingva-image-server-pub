@@ -279,11 +279,12 @@ if [ "$PULL" = no ]; then
     # 镜像站的 pytorch-wheels 是平铺目录，只能按固定版本安装；2.6.0 是 cu124 的最后一个版本
     TORCH_MIRROR=""
     # pip / torch 必须走 https：wheel 没有签名，只能靠 TLS 保证没被篡改。阿里云内网镜像只有 http
-    # （它的证书不含 mirrors.cloud.aliyuncs.com），所以 ECS 上只有 apt 走内网——apt 会校验软件源的 GPG 签名
+    # （它的证书不含 mirrors.cloud.aliyuncs.com），所以 ECS 上只有 apt 走内网——apt 会校验软件源的 GPG 签名。
+    # pip 用腾讯云镜像：阿里云 https 镜像在 ECS 上对 pip / urllib 每个请求要约 24 秒（curl 正常），pip 安装会卡住
     if [ "$ALIYUN_ECS" = yes ]; then
-        info "检测到阿里云 ECS，构建时 apt 使用阿里云内网镜像，pip / torch 使用阿里云 https 镜像"
+        info "检测到阿里云 ECS，构建时 apt 使用阿里云内网镜像，pip 使用腾讯云 https 镜像，torch 使用阿里云 https 镜像"
         set_kv APT_MIRROR "http://mirrors.cloud.aliyuncs.com"
-        set_kv PIP_INDEX_URL "https://mirrors.aliyun.com/pypi/simple"
+        set_kv PIP_INDEX_URL "https://mirrors.cloud.tencent.com/pypi/simple"
         TORCH_MIRROR="https://mirrors.aliyun.com/pytorch-wheels"
     elif [ "$CN_MIRROR" = yes ]; then
         set_kv APT_MIRROR "http://mirrors.aliyun.com"

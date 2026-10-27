@@ -14,10 +14,20 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .config import Settings
 from .errors import ApiError, Code, error_body
 from .pipeline import Pipeline, load_pipeline
-from .schemas import AnalyzeResponse, ErrorResponse, HealthResponse
+from .schemas import AnalyzeResponse, DocFigureResponse, DocPageResponse, ErrorResponse, HealthResponse
 from .stages.decode import DecodeError
 
 API_VERSION = 1
+# lang_hint：语种代码（zh、ja、ko、ru、th、pt-BR 等），只做格式校验，未知语种按默认识别模型处理
+_LANG_HINT = r"^[A-Za-z]{0,8}([_-][A-Za-z0-9]{1,8})*$"
+_DOC_ERROR_RESPONSES = {
+    400: {"model": ErrorResponse},
+    401: {"model": ErrorResponse},
+    413: {"model": ErrorResponse},
+    500: {"model": ErrorResponse},
+    503: {"model": ErrorResponse},
+    504: {"model": ErrorResponse},
+}
 
 logger = logging.getLogger("lingva")
 
@@ -37,6 +47,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         pipeline = load_pipeline(settings)
         app.state.pipeline = pipeline
         app.state.semaphore = asyncio.Semaphore(settings.max_concurrency)
+        # 文档 worker 一次只处理一个请求：先在这里排队，拿到后再占用与漫画共用的推理名额，
+        # 免得排队中的文档请求占着名额挡住漫画请求。排队优先级、每台设备的并发上限由前端处理
+        app.state.doc_semaphore = asyncio.Semaphore(1)
         logger.info(
             "流水线已就绪：stub=%s device=%s max_concurrency=%d models=%s",
             pipeline.stub,
@@ -85,7 +98,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             device=pipeline.device,
             model_version=pipeline.model_version,
             capabilities=pipeline.capabilities,
+            doc_pipeline=pipeline.doc_pipeline,
         )
+
+    async def _read_upload(file: UploadFile) -> bytes:
+        too_large = ApiError(
+            413, Code.IMAGE_TOO_LARGE, f"Image exceeds {settings.max_upload_mb} MB", {"max_mb": settings.max_upload_mb}
+        )
+        if file.size is not None and file.size > settings.max_upload_bytes:
+            raise too_large
+        data = await file.read()
+        if len(data) > settings.max_upload_bytes:
+            raise too_large
+        return data
 
     @app.post(
         "/v1/analyze",
@@ -104,15 +129,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         inpaint: bool = Form(True),
         debug: bool = Form(False),
     ) -> AnalyzeResponse:
-        too_large = ApiError(
-            413, Code.IMAGE_TOO_LARGE, f"Image exceeds {settings.max_upload_mb} MB", {"max_mb": settings.max_upload_mb}
-        )
-        if file.size is not None and file.size > settings.max_upload_bytes:
-            raise too_large
-        data = await file.read()
-        if len(data) > settings.max_upload_bytes:
-            raise too_large
-
+        data = await _read_upload(file)
         pipeline: Pipeline = request.app.state.pipeline
         async with request.app.state.semaphore:
             try:
@@ -134,5 +151,62 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             result.timings_ms,
         )
         return result
+
+    async def _doc_route(request: Request, file: UploadFile, mode: str, lang_hint: str | None, erase: bool) -> dict:
+        from .doc.errors import DocDisabled, DocInferenceError, DocTimeout, ImageTooLarge
+
+        pipeline: Pipeline = request.app.state.pipeline
+        disabled = ApiError(503, Code.DOC_PIPELINE_DISABLED, "Document recognition is not enabled on this server")
+        if not pipeline.doc_pipeline.enabled:
+            raise disabled
+        data = await _read_upload(file)
+        async with request.app.state.doc_semaphore, request.app.state.semaphore:
+            try:
+                result = await run_in_threadpool(pipeline.run_doc, mode, data, lang_hint=lang_hint or None, erase=erase)
+            except DecodeError as e:
+                raise ApiError(400, Code.INVALID_IMAGE, str(e)) from e
+            except ImageTooLarge as e:
+                raise ApiError(
+                    413, Code.IMAGE_TOO_LARGE, str(e), {"max_mb": settings.max_upload_mb, "max_side": e.max_side}
+                ) from e
+            except DocDisabled as e:
+                raise disabled from e
+            except DocTimeout as e:
+                raise ApiError(504, Code.TIMEOUT, "Processing timed out") from e
+            except DocInferenceError as e:
+                logger.error("文档识别失败（%s，%d 字节）：%s", mode, len(data), e)
+                raise ApiError(500, Code.INFERENCE_FAILED, "Inference failed") from e
+            except Exception as e:
+                logger.exception("文档识别失败（%s，%d 字节）", mode, len(data))
+                raise ApiError(500, Code.INFERENCE_FAILED, "Inference failed") from e
+
+        items = result.get("blocks") if mode == "doc_page" else result.get("regions")
+        # 只记元数据：识别出的文字和文件名不进日志
+        logger.info(
+            "%s lang=%s blocks=%d erase=%s timings_ms=%s", mode, result.get("lang"), len(items or []), erase, result.get("timing_ms")
+        )
+        return result
+
+    @app.post(
+        "/v1/doc/page", response_model=DocPageResponse, dependencies=[Depends(require_token)], responses=_DOC_ERROR_RESPONSES
+    )
+    async def doc_page(
+        request: Request,
+        file: UploadFile = File(...),
+        lang_hint: str | None = Form(None, max_length=32, pattern=_LANG_HINT),
+        erase: bool = Form(False),
+    ) -> dict:
+        return await _doc_route(request, file, "doc_page", lang_hint, erase)
+
+    @app.post(
+        "/v1/doc/figure", response_model=DocFigureResponse, dependencies=[Depends(require_token)], responses=_DOC_ERROR_RESPONSES
+    )
+    async def doc_figure(
+        request: Request,
+        file: UploadFile = File(...),
+        lang_hint: str | None = Form(None, max_length=32, pattern=_LANG_HINT),
+        erase: bool = Form(False),
+    ) -> dict:
+        return await _doc_route(request, file, "doc_figure", lang_hint, erase)
 
     return app

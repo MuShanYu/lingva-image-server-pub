@@ -1,12 +1,14 @@
 import logging
 
 import numpy as np
+import torch
 from PIL import Image
 
 from .config import Settings
+from .cpus import available_cpus
 from .device import flush_denormal, resolve_device, resolve_inpaint_precision
 from .pipeline import StageTimer
-from .schemas import AnalyzeResponse, Block, Capabilities, Line
+from .schemas import AnalyzeResponse, Block, Capabilities, DocPipelineInfo, Line
 from .stages.color import estimate_colors, is_colored_text, is_plain_background
 from .stages.decode import decode_image
 from .stages.detect_bubble import BUBBLE, TEXT_FREE, BubbleDetector
@@ -81,6 +83,8 @@ class RealPipeline:
 
     def __init__(self, settings: Settings) -> None:
         self.device = resolve_device(settings.device)
+        # torch 只按 CPU 亲和性开线程，不看 docker --cpus 的配额（见 app/cpus.py）
+        torch.set_num_threads(min(torch.get_num_threads(), available_cpus()))
         dtype, self.inpaint_precision = resolve_inpaint_precision(self.device, settings.inpaint_precision)
         self._mask_dilation = settings.mask_dilation
         self._webp_quality = settings.webp_quality
@@ -102,6 +106,59 @@ class RealPipeline:
         logger.info(
             "设备 %s，擦字精度 %s，气泡检测 %s", self.device, self.inpaint_precision, self._bubble.provider
         )
+        self._doc_max_side = settings.doc_max_side
+        self._doc = self._start_doc_worker(settings) if settings.doc_pipeline_enabled else None
+
+    @staticmethod
+    def _start_doc_worker(settings: Settings):
+        """文档 worker 启动失败（独立虚拟环境缺失、模型下载失败）不影响漫画服务：记录错误，文档接口按未启用处理"""
+        from .doc.client import DocWorkerClient
+
+        try:
+            return DocWorkerClient(
+                settings.doc_python,
+                timeout=settings.doc_timeout,
+                start_timeout=settings.doc_start_timeout,
+                env={
+                    "DOC_DEVICE": settings.doc_device,
+                    "DOC_ENGINE": settings.doc_engine,
+                    "DOC_DET_LIMIT_SIDE": str(settings.doc_det_limit_side),
+                    "PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK": "True",
+                },
+            )
+        except Exception:
+            logger.exception("文档 worker 启动失败，文档识别不可用")
+            return None
+
+    @property
+    def doc_pipeline(self) -> DocPipelineInfo:
+        if self._doc is None:
+            return DocPipelineInfo(enabled=False)
+        return DocPipelineInfo(enabled=True, models=self._doc.models, erase=True)
+
+    def run_doc(self, mode: str, data: bytes, *, lang_hint: str | None, erase: bool) -> dict:
+        from .doc.erase import text_mask
+        from .doc.errors import DocDisabled
+        from .doc.service import run_doc
+
+        if self._doc is None:
+            raise DocDisabled
+
+        def eraser(rgb: np.ndarray, polys: list) -> np.ndarray:
+            # 复用漫画管线常驻的 LaMa：纯色背景直接填色，其余区域才跑模型
+            flush_denormal()
+            out, stats = inpaint_image(rgb, text_mask(rgb.shape[0], rgb.shape[1], polys), self._lama)
+            logger.info("文档擦字：%d 个区域，LaMa %d、纯色填充 %d", stats.regions, stats.lama, stats.flat)
+            return out
+
+        return run_doc(
+            mode, data, lang_hint=lang_hint, erase=erase, max_side=self._doc_max_side,
+            recognize=self._doc.call, eraser=eraser, webp_quality=self._webp_quality, timings={},
+        )
+
+    def close(self) -> None:
+        if self._doc is not None:
+            self._doc.close()
 
     def run(self, data: bytes, *, inpaint: bool, debug: bool) -> AnalyzeResponse:
         flush_denormal()

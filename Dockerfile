@@ -15,18 +15,23 @@ ARG APT_MIRROR=
 # 固定 1.22：基于 CUDA 12 + cuDNN 9，和 torch cu124 自带的 CUDA 库一致，也能跑在 CUDA 12.2 的驱动（阿里云 GRID 535）上
 ARG ONNXRUNTIME_GPU=0
 ARG ONNXRUNTIME_GPU_VERSION=1.22.0
+# 文档识别管线（可选，设为 1 时安装 requirements-doc.txt）：PaddleOCR 与漫画管线装在同一个环境里，
+# 文档 worker 以子进程运行（同一个 Python）
+ARG DOC_PIPELINE=0
 
 ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    MODEL_DIR=/models
+    MODEL_DIR=/models \
+    PADDLE_PDX_CACHE_HOME=/models/paddlex \
+    PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK=True
 
-# opencv-python-headless 依赖 libglib
+# opencv-contrib-python（非 headless，见 requirements.txt）依赖 libglib、libGL
 RUN if [ -n "${APT_MIRROR}" ]; then \
         sed -i "s|http://deb.debian.org|${APT_MIRROR%/}|g" /etc/apt/sources.list.d/debian.sources; \
     fi \
     && apt-get update \
-    && apt-get install -y --no-install-recommends libglib2.0-0 \
+    && apt-get install -y --no-install-recommends libglib2.0-0 libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -35,8 +40,10 @@ RUN if [ -n "${TORCH_FIND_LINKS}" ]; then \
     else \
         pip install --index-url "${TORCH_INDEX_URL}" torch; \
     fi
-COPY requirements.txt .
+COPY requirements.txt requirements-doc.txt ./
+# 两个依赖文件一起解析，保证文档管线不会改动漫画管线的版本
 RUN pip install --index-url "${PIP_INDEX_URL}" -r requirements.txt \
+        $([ "${DOC_PIPELINE}" = "1" ] && echo -r requirements-doc.txt) \
     && if [ "${ONNXRUNTIME_GPU}" = "1" ]; then \
         pip uninstall -y onnxruntime && pip install --index-url "${PIP_INDEX_URL}" "onnxruntime-gpu==${ONNXRUNTIME_GPU_VERSION}"; \
     fi

@@ -6,7 +6,7 @@ from typing import Protocol
 from PIL import Image, ImageDraw
 
 from .config import Settings
-from .schemas import AnalyzeResponse, BBox, Block, Capabilities, Line
+from .schemas import AnalyzeResponse, BBox, Block, Capabilities, DocPipelineInfo, Line
 from .stages.decode import decode_image
 from .stages.encode import encode_png_b64, encode_webp_b64
 
@@ -17,7 +17,14 @@ class Pipeline(Protocol):
     model_version: dict[str, str]
     capabilities: Capabilities
 
+    @property
+    def doc_pipeline(self) -> DocPipelineInfo: ...
+
     def run(self, data: bytes, *, inpaint: bool, debug: bool) -> AnalyzeResponse: ...
+
+    def run_doc(self, mode: str, data: bytes, *, lang_hint: str | None, erase: bool) -> dict:
+        """文档识别（app/doc/service.py 的 run_doc）；未启用时抛出 DocDisabled"""
+        ...
 
 
 class StageTimer:
@@ -93,6 +100,39 @@ class StubPipeline:
 
     def __init__(self, settings: Settings) -> None:
         self._webp_quality = settings.webp_quality
+        self._doc_enabled = settings.doc_pipeline_enabled
+        self._doc_max_side = settings.doc_max_side
+
+    @property
+    def doc_pipeline(self) -> DocPipelineInfo:
+        from .doc.service import FakeEngine
+
+        if not self._doc_enabled:
+            return DocPipelineInfo(enabled=False)
+        return DocPipelineInfo(enabled=True, models=FakeEngine.models, erase=True)
+
+    def run_doc(self, mode: str, data: bytes, *, lang_hint: str | None, erase: bool) -> dict:
+        """假的文档识别：识别结果来自 FakeEngine，擦字把文字区域涂白"""
+        from .doc.erase import text_mask
+        from .doc.errors import DocDisabled
+        from .doc.service import FakeEngine, run_doc
+
+        if not self._doc_enabled:
+            raise DocDisabled
+        engine = FakeEngine()
+
+        def recognize(op, rgb, lang):
+            return engine.page(rgb, lang) if op == "page" else engine.figure(rgb, lang)
+
+        def eraser(rgb, polys):
+            out = rgb.copy()
+            out[text_mask(rgb.shape[0], rgb.shape[1], polys) > 0] = 255
+            return out
+
+        return run_doc(
+            mode, data, lang_hint=lang_hint, erase=erase, max_side=self._doc_max_side,
+            recognize=recognize, eraser=eraser, webp_quality=self._webp_quality, timings={},
+        )
 
     def run(self, data: bytes, *, inpaint: bool, debug: bool) -> AnalyzeResponse:
         timer = StageTimer()

@@ -78,21 +78,21 @@ def flat_fill_color(crop: np.ndarray, m: np.ndarray) -> np.ndarray | None:
 
     外圈以浅色为主时，先排除其中的深色线稿（气泡边框、框线）：mask 已经扣掉了线稿（见 mask.py），
     填色不会盖到它们，不应该因为外圈穿过边框就判成「非纯色」；浅灰的网点纹理仍参与判断。
+    外圈以深色为主时（深色横幅、黑底上的白字）整圈都「深」，不做线稿判断。
     """
     k = 2 * FLAT_RING + 1
     ring = cv2.dilate(m.astype(np.uint8), np.ones((k, k), np.uint8)).astype(bool) & ~m
     px = crop[ring].astype(np.int16)
     if len(px) < 20:
         return None
-    crop_dark = crop.mean(axis=2) < LINE_ART_THRESH
-    # 外圈的深色线条一直延伸进 mask（离文字太近的气泡边框被划进了 mask）：纯色填充会把这段线
-    # 涂掉，留给 LaMa，它能把线补回来
-    ring_dark = (ring & crop_dark).astype(np.uint8)
-    if (cv2.dilate(ring_dark, np.ones((3, 3), np.uint8)).astype(bool) & m & crop_dark).sum() >= LINE_ENTER_MIN:
-        return None
-    gray = px.mean(axis=1)
-    light = gray >= LINE_ART_THRESH
+    light = px.mean(axis=1) >= LINE_ART_THRESH
     if light.mean() >= FLAT_LIGHT_MIN:
+        crop_dark = crop.mean(axis=2) < LINE_ART_THRESH
+        # 外圈的深色线条一直延伸进 mask（离文字太近的气泡边框被划进了 mask）：纯色填充会把这段线
+        # 涂掉，留给 LaMa，它能把线补回来
+        ring_dark = (ring & crop_dark).astype(np.uint8)
+        if (cv2.dilate(ring_dark, np.ones((3, 3), np.uint8)).astype(bool) & m & crop_dark).sum() >= LINE_ENTER_MIN:
+            return None
         px = px[light]
     median = np.median(px, axis=0)
     same = (np.abs(px - median).max(axis=1) <= FLAT_TOL).mean()
